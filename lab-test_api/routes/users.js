@@ -57,6 +57,7 @@ router.post('/order',async function(req, res, next) {
   var dbHandler = new DatabaseConnector().getInstance();
   try {
     var resp = await dbHandler.placeOrder(req.body);
+    console.log(resp);
     if(resp) {
       res.json(resp).status(200);
       return;

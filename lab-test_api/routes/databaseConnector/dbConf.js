@@ -3,10 +3,9 @@ const mongoose = require('mongoose');
 class DatabaseConnector {
 
     constructor() {
-        this.initConnection()
         this.products = null;
-        this.OrderWrite = null;
         this.connectionString = 'mongodb+srv://naanThaan:sollaMudiyaathu@cluster0.v3w7i.mongodb.net/lab-test';
+        this.initConnection();
     }
 
     async initConnection() {
@@ -38,15 +37,10 @@ class DatabaseConnector {
                     validate: [validateEmail, 'Please fill a valid email address'],
                     match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please fill a valid email address']
                 },
-                product_id:{
-                    type:'string',
-                    required: true
-                },
-                quantity:{
-                    type:'number',
-                    required: true,
-                    min: 1
-                }
+                products:[{
+                    product_id: String,
+                    quantity: Number,
+                }]
             });
             const productSchema = new mongoose.Schema({
                 product_name:{
@@ -113,7 +107,6 @@ class DatabaseConnector {
         try {
             if(this.products) {
                 var resp = await this.products.findOne({_id:product_id});
-                console.log(resp["quantity"],requiredQuantity);
                 if(resp["quantity"]){
                     if(resp["quantity"] > requiredQuantity) {
                         return true
@@ -129,29 +122,44 @@ class DatabaseConnector {
 
     async placeOrder(jsonData) {
         try {
-            var order = new this.OrderWrite(jsonData);
-            var localThis = this;
-            var prom = new Promise(async function(res,rej){
-                if(await localThis.checkIfProductInStock(jsonData["product_id"],jsonData["quantity"])) {
-                    order.save(async function (err, doc) {
-                        if(err){
-                            console.log(err);
-                            rej(err)
-                            return;
-                        }
-                        const filter = { _id: jsonData["product_id"] };
-                        const update = { $inc: {quantity: -jsonData["quantity"] }};
-                        let doc1 = await localThis.products.findOneAndUpdate(filter, update);
-                        console.log(doc1);
-                        res(doc);
-                        return
-                    });
-                } else {
-                    res({message:"No Enough Stock. please reduce the quantity"});
-                }
-            });
-            var result = await prom;
-            return result
+            if(this.OrderWrite) {
+                var order = new this.OrderWrite(jsonData);
+                var localThis = this;
+                var prom = new Promise(async function(res,rej){
+                    if(jsonData.products && jsonData.products.length > 0) {
+                        jsonData.products.forEach(async function(product,index,object){
+                            var bRet = await localThis.checkIfProductInStock(product["product_id"],product["quantity"]);
+                            if(!bRet) {
+                                object.splice(index, 1);
+                            } else {
+                                const filter = { _id: product["product_id"] };
+                                const update = { $inc: {quantity: -product["quantity"] }};
+                                let doc1 = await localThis.products.findOneAndUpdate(filter, update);
+                                console.log(doc1);
+                            }
+                            if (index === object.length - 1){ 
+                                jsonData.products = object;
+                                order = new localThis.OrderWrite(jsonData);
+                                order.save(async function (err, doc) {
+                                    if(err){
+                                        console.log(err);
+                                        rej(err)
+                                        return;
+                                    }
+                                    res(doc);
+                                    return
+                                });
+                            }
+                        });
+                    }
+                    res({message:"No Stock for the specified Products"});
+                    return;
+                });
+                var result = await prom;
+                return result
+            }
+            return null
+            
         } catch (err) {
             console.log(err)
             return null
